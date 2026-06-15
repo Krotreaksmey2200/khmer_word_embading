@@ -20,6 +20,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
+import random
+import time
 
 # ──────────────────────────────────────────────
 # Model Architecture Definitions (for loading checkpoints)
@@ -85,84 +87,115 @@ def load_all_models():
     """Load all saved models and data into memory."""
     device = torch.device('cpu')
 
-    # 1. Vocabulary & config
-    with open(f'{MODELS_DIR}/vocab_data.pkl', 'rb') as f:
-        vocab_data = pickle.load(f)
-    with open(f'{MODELS_DIR}/config.pkl', 'rb') as f:
-        config = pickle.load(f)
+    # Check if models directory exists
+    if not os.path.exists(MODELS_DIR):
+        st.error(f'Model directory "{MODELS_DIR}" not found. '
+                 f'Please run the notebook first to train and save models, '
+                 f'or check that you are in the correct project directory.')
+        st.stop()
 
-    word2idx = vocab_data['word2idx']
-    idx2word = vocab_data['idx2word']
-    vocab = vocab_data['vocab']
-    vocab_size = vocab_data['vocab_size']
+    required_files = [
+        'vocab_data.pkl', 'config.pkl', 'skipgram_embeddings.pkl',
+        'scratch_embeddings.pkl', 'skipgram_model.pt', 'lm_model_fixed.pt',
+        'lm_model_scratch.pt', 'pca_data.pkl', 'tuning_results.pkl', 'lm_data.pkl',
+    ]
 
-    # 2. Skip-gram embeddings (numpy)
-    with open(f'{MODELS_DIR}/skipgram_embeddings.pkl', 'rb') as f:
-        skipgram_embeddings = pickle.load(f)
+    missing = [f for f in required_files if not os.path.exists(f'{MODELS_DIR}/{f}')]
+    if missing:
+        missing_str = ', '.join(missing)
+        st.error(f'Missing model files in "{MODELS_DIR}/": {missing_str}. '
+                 f'Please run the Jupyter notebook first to generate these files.')
+        st.stop()
 
-    # 3. Scratch embeddings (numpy)
-    with open(f'{MODELS_DIR}/scratch_embeddings.pkl', 'rb') as f:
-        scratch_embeddings = pickle.load(f)
+    try:
+        # 1. Vocabulary & config
+        with open(f'{MODELS_DIR}/vocab_data.pkl', 'rb') as f:
+            vocab_data = pickle.load(f)
+        with open(f'{MODELS_DIR}/config.pkl', 'rb') as f:
+            config = pickle.load(f)
 
-    # 4. Skip-gram model (PyTorch)
-    sg_checkpoint = torch.load(f'{MODELS_DIR}/skipgram_model.pt', map_location=device)
-    sg_model = SkipGramModel(sg_checkpoint['vocab_size'], sg_checkpoint['embedding_dim'])
-    sg_model.load_state_dict(sg_checkpoint['model_state_dict'])
-    sg_model.eval()
+        word2idx = vocab_data['word2idx']
+        idx2word = vocab_data['idx2word']
+        vocab = vocab_data['vocab']
+        vocab_size = vocab_data['vocab_size']
 
-    # 5. LM Fixed model
-    lm_fixed_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_fixed.pt', map_location=device)
-    lm_fixed = NeuralLanguageModel(
-        vocab_size=lm_fixed_checkpoint['vocab_size'],
-        embedding_dim=lm_fixed_checkpoint['embedding_dim'],
-        n_prev=lm_fixed_checkpoint['n_prev'],
-        hidden_size=lm_fixed_checkpoint['hidden_size']
-    )
-    lm_fixed.load_state_dict(lm_fixed_checkpoint['model_state_dict'])
-    lm_fixed.eval()
-    # Freeze embeddings
-    for param in lm_fixed.embeddings.parameters():
-        param.requires_grad = False
+        # 2. Skip-gram embeddings (numpy)
+        with open(f'{MODELS_DIR}/skipgram_embeddings.pkl', 'rb') as f:
+            skipgram_embeddings = pickle.load(f)
 
-    # 6. LM Scratch model
-    lm_scratch_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_scratch.pt', map_location=device)
-    lm_scratch = NeuralLanguageModel(
-        vocab_size=lm_scratch_checkpoint['vocab_size'],
-        embedding_dim=lm_scratch_checkpoint['embedding_dim'],
-        n_prev=lm_scratch_checkpoint['n_prev'],
-        hidden_size=lm_scratch_checkpoint['hidden_size']
-    )
-    lm_scratch.load_state_dict(lm_scratch_checkpoint['model_state_dict'])
-    lm_scratch.eval()
+        # 3. Scratch embeddings (numpy)
+        with open(f'{MODELS_DIR}/scratch_embeddings.pkl', 'rb') as f:
+            scratch_embeddings = pickle.load(f)
 
-    # 7. PCA data
-    with open(f'{MODELS_DIR}/pca_data.pkl', 'rb') as f:
-        pca_data = pickle.load(f)
+        # 4. Skip-gram model (PyTorch)
+        sg_checkpoint = torch.load(f'{MODELS_DIR}/skipgram_model.pt', map_location=device)
+        sg_model = SkipGramModel(sg_checkpoint['vocab_size'], sg_checkpoint['embedding_dim'])
+        sg_model.load_state_dict(sg_checkpoint['model_state_dict'])
+        sg_model.eval()
 
-    # 8. Tuning results
-    with open(f'{MODELS_DIR}/tuning_results.pkl', 'rb') as f:
-        tuning_results = pickle.load(f)
+        # 5. LM Fixed model
+        lm_fixed_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_fixed.pt', map_location=device)
+        lm_fixed = NeuralLanguageModel(
+            vocab_size=lm_fixed_checkpoint['vocab_size'],
+            embedding_dim=lm_fixed_checkpoint['embedding_dim'],
+            n_prev=lm_fixed_checkpoint['n_prev'],
+            hidden_size=lm_fixed_checkpoint['hidden_size']
+        )
+        lm_fixed.load_state_dict(lm_fixed_checkpoint['model_state_dict'])
+        lm_fixed.eval()
+        # Freeze embeddings
+        for param in lm_fixed.embeddings.parameters():
+            param.requires_grad = False
 
-    # 9. LM data
-    with open(f'{MODELS_DIR}/lm_data.pkl', 'rb') as f:
-        lm_data = pickle.load(f)
+        # 6. LM Scratch model
+        lm_scratch_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_scratch.pt', map_location=device)
+        lm_scratch = NeuralLanguageModel(
+            vocab_size=lm_scratch_checkpoint['vocab_size'],
+            embedding_dim=lm_scratch_checkpoint['embedding_dim'],
+            n_prev=lm_scratch_checkpoint['n_prev'],
+            hidden_size=lm_scratch_checkpoint['hidden_size']
+        )
+        lm_scratch.load_state_dict(lm_scratch_checkpoint['model_state_dict'])
+        lm_scratch.eval()
 
-    return {
-        'vocab_data': vocab_data,
-        'config': config,
-        'word2idx': word2idx,
-        'idx2word': idx2word,
-        'vocab': vocab,
-        'vocab_size': vocab_size,
-        'skipgram_embeddings': skipgram_embeddings,
-        'scratch_embeddings': scratch_embeddings,
-        'sg_model': sg_model,
-        'lm_fixed': lm_fixed,
-        'lm_scratch': lm_scratch,
-        'pca_data': pca_data,
-        'tuning_results': tuning_results,
-        'lm_data': lm_data,
-    }
+        # 7. PCA data
+        with open(f'{MODELS_DIR}/pca_data.pkl', 'rb') as f:
+            pca_data = pickle.load(f)
+
+        # 8. Tuning results
+        with open(f'{MODELS_DIR}/tuning_results.pkl', 'rb') as f:
+            tuning_results = pickle.load(f)
+
+        # 9. LM data
+        with open(f'{MODELS_DIR}/lm_data.pkl', 'rb') as f:
+            lm_data = pickle.load(f)
+
+        # 10. Comparison data (optional)
+        comparison_data = None
+        if os.path.exists(f'{MODELS_DIR}/comparison_data.pkl'):
+            with open(f'{MODELS_DIR}/comparison_data.pkl', 'rb') as f:
+                comparison_data = pickle.load(f)
+
+        return {
+            'vocab_data': vocab_data,
+            'config': config,
+            'word2idx': word2idx,
+            'idx2word': idx2word,
+            'vocab': vocab,
+            'vocab_size': vocab_size,
+            'skipgram_embeddings': skipgram_embeddings,
+            'scratch_embeddings': scratch_embeddings,
+            'sg_model': sg_model,
+            'lm_fixed': lm_fixed,
+            'lm_scratch': lm_scratch,
+            'pca_data': pca_data,
+            'tuning_results': tuning_results,
+            'lm_data': lm_data,
+            'comparison_data': comparison_data,
+        }
+    except Exception as e:
+        st.error(f'Error loading models: {e}')
+        st.stop()
 
 
 # ──────────────────────────────────────────────
@@ -224,7 +257,6 @@ def draw_neural_network(active_layer=None, vocab_size=182, hidden_size=512, n_pr
     When active_layer is set (0-4), that layer is highlighted and others are dimmed.
     active_layer: None=all visible, 0=input, 1=embedding, 2=concat, 3=hidden, 4=output
     """
-    import random
     fig = go.Figure()
     
     # Layer positions (x, y) - simplified layout
@@ -689,7 +721,7 @@ with tab3:
         )
         max_labels = st.slider('Number of labeled words:', 20, 100, 60)
 
-    word_counts = Counter(data['vocab_data']['filtered_tokens'])
+    word_counts = Counter(data['vocab_data'].get('filtered_tokens', data['vocab_data'].get('tokens', [])))
     top_words = [w for w, _ in word_counts.most_common(max_labels)]
     top_indices = [word2idx[w] for w in top_words if w in word2idx]
 
@@ -908,21 +940,22 @@ with tab4:
 
     # Similarity agreement
     st.markdown('### 🤝 Cross-Model Agreement')
-    with open(f'{MODELS_DIR}/comparison_data.pkl', 'rb') as f:
-        comp_data = pickle.load(f)
-    mean_cos = comp_data.get('mean_cosine_sim', 0)
-
-    st.markdown(f"""
-    - **Mean cosine similarity** between corresponding word vectors: **{mean_cos:.4f}**
-    - This measures how much the two embedding spaces agree on word representations.
-    """)
-
-    if mean_cos > 0.5:
-        st.success('The two embedding spaces are reasonably aligned.')
-    elif mean_cos > 0.2:
-        st.info('The two embedding spaces are somewhat aligned.')
+    comp_data = data.get('comparison_data')
+    if comp_data is None:
+        st.info('Comparison data not available. Run the notebook to generate comparison_data.pkl in saved_models/.')
     else:
-        st.warning('The two embedding spaces learned quite different representations.')
+        mean_cos = comp_data.get('mean_cosine_sim', 0)
+        st.markdown(f"""
+        - **Mean cosine similarity** between corresponding word vectors: **{mean_cos:.4f}**
+        - This measures how much the two embedding spaces agree on word representations.
+        """)
+
+        if mean_cos > 0.5:
+            st.success('The two embedding spaces are reasonably aligned.')
+        elif mean_cos > 0.2:
+            st.info('The two embedding spaces are somewhat aligned.')
+        else:
+            st.warning('The two embedding spaces learned quite different representations.')
 
 # ════════════════════════════════════════════
 # TAB 5: Hyperparameter Tuning
@@ -1013,8 +1046,8 @@ with tab6:
         st.session_state.chat_messages = []
 
     # Pre-compute word frequencies and ranks for quick lookup
-    word_counts = Counter(data['vocab_data']['filtered_tokens'])
-    total_filtered = len(data['vocab_data']['filtered_tokens'])
+    word_counts = Counter(data['vocab_data'].get('filtered_tokens', data['vocab_data'].get('tokens', [])))
+    total_filtered = len(data['vocab_data'].get('filtered_tokens', data['vocab_data'].get('tokens', [])))
     sorted_freqs = sorted(set(word_counts.values()), reverse=True)
     freq_to_rank = {f: i+1 for i, f in enumerate(sorted_freqs)}
 
@@ -1415,7 +1448,7 @@ with tab7:
             st.markdown('**Example Sentence**')
 
             # Build an example sentence from filtered tokens
-            filtered_tokens = data['vocab_data']['filtered_tokens']
+            filtered_tokens = data['vocab_data'].get('filtered_tokens', data['vocab_data'].get('tokens', []))
             # Find a good sequence
             start_idx = 0
             for i, t in enumerate(filtered_tokens):
@@ -1598,7 +1631,7 @@ with tab7:
             sg_var = pca_data['pca_skipgram'].explained_variance_ratio_.sum()
 
             # Top 30 words to label
-            word_counts_local = Counter(data['vocab_data']['filtered_tokens'])
+            word_counts_local = Counter(data['vocab_data'].get('filtered_tokens', data['vocab_data'].get('tokens', [])))
             top_local = [w for w, _ in word_counts_local.most_common(30)]
             top_local_idx = [word2idx[w] for w in top_local if w in word2idx]
 
@@ -1715,6 +1748,8 @@ with tab7:
         with col_c2:
             if st.button('⏸ Pause' if st.session_state.nn_playing else '▶ Play'):
                 st.session_state.nn_playing = not st.session_state.nn_playing
+                if st.session_state.nn_playing:
+                    st.session_state.nn_last_step_time = time.time()
                 st.rerun()
         with col_c3:
             if st.button('⏭ Forward', disabled=st.session_state.nn_step == 5):
@@ -1738,10 +1773,18 @@ with tab7:
         # ── Auto-play timer ──
         if st.session_state.nn_playing:
             if st.session_state.nn_step < 5:
-                import time
-                time.sleep(2.0)
-                st.session_state.nn_step += 1
-                st.rerun()
+                nn_last = st.session_state.get('nn_last_step_time', 0)
+                elapsed = time.time() - nn_last
+                if elapsed >= 2.0:
+                    st.session_state.nn_step += 1
+                    st.session_state.nn_last_step_time = time.time()
+                    if st.session_state.nn_step >= 5:
+                        st.session_state.nn_playing = False
+                    st.rerun()
+                else:
+                    # Small sleep to avoid busy-waiting, then re-check
+                    time.sleep(0.3)
+                    st.rerun()
             else:
                 st.session_state.nn_playing = False
 
