@@ -218,6 +218,146 @@ def project_embeddings_to_2d(embeddings, seed=42):
     return pca.fit_transform(embeddings)
 
 
+def draw_neural_network(active_layer=None, vocab_size=182, hidden_size=512, n_prev=5, emb_dim=50):
+    """
+    Draw a neural network diagram using Plotly Scatter + lines.
+    When active_layer is set (0-4), that layer is highlighted and others are dimmed.
+    active_layer: None=all visible, 0=input, 1=embedding, 2=concat, 3=hidden, 4=output
+    """
+    import random
+    fig = go.Figure()
+    
+    # Layer positions (x, y) - simplified layout
+    layer_x = [0, 1.5, 3, 4.5, 6]
+    layer_names = ['Word', 'Embed', 'Concat', 'Hidden', 'Output']
+    layer_labels = ['Input', 'Embedding', 'Concat', 'Hidden', 'Output']
+    layer_sizes = [14, 5, 9, 9, 13]
+    layer_colors = ['#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#ef5350']
+    layer_titles = [
+        'Input Layer<br><sup>5 previous words</sup>',
+        'Embedding<br><sup>50D vectors</sup>',
+        'Concat<br><sup>5 x 50 = 250D</sup>',
+        'Hidden Layer<br><sup>512 sigmoid</sup>',
+        f'Output Layer<br><sup>Softmax over {vocab_size} words</sup>'
+    ]
+    layer_title_colors = ['#1565c0', '#2e7d32', '#e65100', '#6a1b9a', '#c62828']
+    n_nodes = [5, 10, 8, 20, 15]
+    node_texts_list = [
+        ['w1', 'w2', 'w3', 'w4', 'w5'],
+        None, None, None,
+        ['word1', 'word2', '...', f'word{vocab_size}'] if 15 >= 4 else None
+    ]
+    
+    conn_colors = [
+        'rgba(100, 181, 246, 0.15)',
+        'rgba(129, 199, 132, 0.15)',
+        'rgba(255, 183, 77, 0.15)',
+        'rgba(186, 104, 200, 0.15)',
+    ]
+    conn_highlight = [
+        'rgba(100, 181, 246, 0.5)',
+        'rgba(129, 199, 132, 0.5)',
+        'rgba(255, 183, 77, 0.5)',
+        'rgba(186, 104, 200, 0.5)',
+    ]
+
+    # Helper to create evenly spaced y positions
+    def y_positions(n, center=0, spread=3):
+        if n <= 1:
+            return [center]
+        spacing = spread / (n - 1)
+        return [center - spread/2 + i * spacing for i in range(n)]
+
+    def is_active(li):
+        return active_layer is not None and li == active_layer
+    
+    # Store layer y-positions for connections
+    layer_ys = []
+
+    for li in range(5):
+        x = layer_x[li]
+        n = n_nodes[li]
+        color = layer_colors[li]
+        name = layer_names[li]
+        size = layer_sizes[li]
+        title = layer_titles[li]
+        title_color = layer_title_colors[li]
+        texts = node_texts_list[li]
+        active = is_active(li)
+        
+        active_opacity = 1.0
+        dim_opacity = 0.15
+        opacity = active_opacity if active else (dim_opacity if active_layer is not None else 0.8)
+        actual_size = size * 2.0 if active else size
+        
+        ys = y_positions(n, center=0, spread=3.5)
+        layer_ys.append(ys)
+        
+        marker_dict = dict(color=color, size=actual_size, opacity=opacity)
+        if active:
+            marker_dict['line'] = dict(color='#FFD700', width=3)
+        else:
+            marker_dict['line'] = dict(color='white', width=0.5)
+        
+        fig.add_trace(go.Scatter(
+            x=[x] * n, y=ys,
+            mode='markers+text' if texts else 'markers',
+            marker=marker_dict,
+            text=texts if texts else None,
+            textposition='middle right' if texts else None,
+            textfont=dict(size=8, color='#333'),
+            hovertext=[f'{name} {j+1}' for j in range(n)],
+            hoverinfo='text',
+            name=name,
+            showlegend=False
+        ))
+        
+        # Layer label below
+        fig.add_annotation(x=x, y=-2.5, xref='x', yref='y',
+                          text=title, showarrow=False,
+                          font=dict(size=10, color=title_color,
+                                   style='italic' if not active else 'normal'))
+    
+    # ── Connections between layers ──
+    for li in range(4):
+        y1_list = layer_ys[li]
+        y2_list = layer_ys[li + 1]
+        color = conn_highlight[li] if (active_layer is not None and (active_layer == li or active_layer == li + 1)) else conn_colors[li]
+        n_sample = 35 if (active_layer is not None and (active_layer == li or active_layer == li + 1)) else 25
+        
+        indices = random.sample(range(len(y1_list)), min(n_sample, len(y1_list)))
+        for i in indices:
+            j = i % len(y2_list)
+            fig.add_annotation(
+                x=layer_x[li+1], y=y2_list[j], ax=layer_x[li], ay=y1_list[i],
+                xref='x', yref='y', axref='x', ayref='y',
+                showarrow=True, arrowhead=0, arrowsize=0.5,
+                arrowwidth=0.3, arrowcolor=color,
+                standoff=0, startstandoff=0
+            )
+    
+    # ── Highlight glow for active layer ──
+    if active_layer is not None:
+        x_c = layer_x[active_layer]
+        fig.add_vrect(
+            x0=x_c - 0.55, x1=x_c + 0.55,
+            fillcolor='rgba(255, 215, 0, 0.08)',
+            layer='below', line_width=0
+        )
+    
+    # Layout
+    fig.update_layout(
+        height=450,
+        xaxis=dict(range=[-0.5, 7], showgrid=False, zeroline=False, visible=False),
+        yaxis=dict(range=[-3.2, 3.2], showgrid=False, zeroline=False, visible=False),
+        margin=dict(l=10, r=10, t=10, b=40),
+        plot_bgcolor='rgba(248, 249, 250, 1)',
+        paper_bgcolor='rgba(248, 249, 250, 1)',
+        showlegend=False
+    )
+    return fig
+
+
 # ──────────────────────────────────────────────
 # Streamlit UI
 # ──────────────────────────────────────────────
@@ -1064,14 +1204,56 @@ with tab7:
 
     current_step = st.session_state.learn_step
 
-    # ── Step 0: Load & Explore Data ──
+    # ── Pipeline Overview (shown at start) ──
     if current_step == 0:
+        st.markdown('### 📋 Full Pipeline Overview')
+        st.markdown(
+            'This project takes Khmer text through **5 major stages** to build word embeddings '
+            'and neural language models. Navigate through each step using the buttons below.'
+        )
+
+        # Flow diagram using HTML/CSS
+        flow_steps = [
+            ('📂', 'Load Text', 'Read Khmer<br>Wikipedia articles', '#e3f2fd', '#1565c0'),
+            ('✂️', 'Tokenize', 'khmer-nltk<br>word segmentation', '#e8f5e9', '#2e7d32'),
+            ('📖', 'Build Vocab', 'Frequency filter<br>freq ≥ 10', '#fff3e0', '#e65100'),
+            ('🔄', 'Skip-gram', 'Center → Context<br>±4 window', '#f3e5f5', '#6a1b9a'),
+            ('🧠', 'Train Model', '50D embeddings<br>Negative sampling', '#fce4ec', '#c62828'),
+        ]
+
+        flow_html = '<div style="display:flex;gap:6px;justify-content:center;align-items:center;margin:15px 0;flex-wrap:wrap;">'
+        for i, (emoji, title, desc, bg, color) in enumerate(flow_steps):
+            flow_html += f'''
+                <div style="background:{bg};border-radius:12px;padding:10px 14px;text-align:center;
+                    min-width:110px;border:2px solid {color};">
+                    <div style="font-size:1.8rem;">{emoji}</div>
+                    <div style="font-weight:bold;font-size:0.9rem;color:{color};">{title}</div>
+                    <div style="font-size:0.7rem;color:#666;margin-top:2px;">{desc}</div>
+                </div>'''
+            if i < len(flow_steps) - 1:
+                flow_html += f'<div style="font-size:1.5rem;color:#999;">→</div>'
+        flow_html += '</div>'
+        st.markdown(flow_html, unsafe_allow_html=True)
+
+        # Params table
+        st.markdown('### ⚙️ Model Configuration')
+        col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+        with col_p1:
+            st.metric('Embedding Dim', config['EMBEDDING_DIM'])
+        with col_p2:
+            st.metric('Window Size', f'±{config["WINDOW_SIZE"]}')
+        with col_p3:
+            st.metric('Negative Samples', config['NEG_SAMPLES'])
+        with col_p4:
+            st.metric('Vocabulary', f'{vocab_size} words')
+
+        st.markdown('---')
         col1, col2 = st.columns([3, 2])
 
         with col1:
             st.subheader('📂 The Data')
             raw_text = data['vocab_data']['raw_text']
-            st.markdown('We use Khmer Wikipedia articles about Angkor Wat, Banteay Srei, and Siem Reap province.')
+            st.markdown('We use Khmer Wikipedia articles about **Angkor Wat**, **Banteay Srei**, and **Siem Reap province**.')
 
             st.markdown('**Raw Text Preview:**')
             preview = raw_text[:600]
@@ -1469,119 +1651,326 @@ with tab7:
 
             st.success('✅ The model learned semantic relationships without being told what words mean!')
 
-    # ── Step 6: Neural LM Prediction ──
+    # ── Step 6: Neural LM Prediction (with animated forward pass) ──
     elif current_step == 6:
         st.subheader('🔮 Step 6: Neural Language Model')
         st.markdown('Predict the **next word** from the last 5 words — like autocomplete for Khmer!')
 
-        col1, col2 = st.columns([3, 2])
+        # ── Animation state ──
+        if 'nn_step' not in st.session_state:
+            st.session_state.nn_step = 0
+        if 'nn_playing' not in st.session_state:
+            st.session_state.nn_playing = False
+        if 'nn_demo_words' not in st.session_state:
+            st.session_state.nn_demo_words = 'ប្រាសាទ អង្គរ ជា ប្រាសាទ ដ៏'
 
-        with col1:
-            st.markdown('**Network Architecture**')
+        # ── Get demo words ──
+        demo_words_str = st.text_input(
+            'Type 5 Khmer words for the demo:',
+            value=st.session_state.nn_demo_words,
+            key='nn_demo_input',
+            help='These words will flow through the network in the animation'
+        )
+        st.session_state.nn_demo_words = demo_words_str
+        demo_words = demo_words_str.strip().split()
+        
+        # Pre-compute model outputs for the demo (if valid)
+        valid_demo = len(demo_words) >= config['N_PREV'] and all(w in word2idx for w in demo_words[-config['N_PREV']:])
+        nn_pred_word = None
+        nn_cands = None
+        nn_emb_sample = None
+        nn_hidden_sample = None
+        
+        if valid_demo:
+            context = demo_words[-config['N_PREV']:]
+            context_idx = [word2idx[w] for w in context]
+            x_t = torch.tensor([context_idx], dtype=torch.long)
+            with torch.no_grad():
+                emb_all = lm_fixed.embeddings(x_t)
+                emb_flat = emb_all.view(1, -1)
+                h_all = torch.sigmoid(lm_fixed.hidden(emb_flat))
+                logits = lm_fixed.output(h_all)
+                probs = F.softmax(logits, dim=1)
+            nn_pred_idx = logits.argmax(dim=1).item()
+            nn_pred_word = idx2word[nn_pred_idx]
+            top_probs, top_idx = torch.topk(probs[0], 5)
+            nn_cands = [(idx2word[i.item()], float(p.item())) for i, p in zip(top_idx, top_probs)]
+            nn_emb_sample = emb_all[0, :, :5].numpy()
+            nn_hidden_sample = h_all[0, :8].numpy()
+        
+        # ── Animation Controls ──
+        st.markdown('### 🎬 Animated Forward Pass')
+        st.markdown(
+            'Watch data flow through the network step by step. '
+            'Press **Play** to auto-animate, or **Step** to go manually.'
+        )
 
-            # Visual architecture
-            arch_data = {
-                'Layer': ['Input', 'Embedding', 'Concatenate', 'Hidden (Sigmoid)', 'Output (Softmax)'],
-                'Size': [f'5 words', f'5 × {config["EMBEDDING_DIM"]}D', f'{config["N_PREV"]*config["EMBEDDING_DIM"]}D', f'{config["HIDDEN_SIZE"]} neurons', f'{vocab_size} words'],
-                'Color': ['#e3f2fd', '#bbdefb', '#90caf9', '#4a148c', '#7b1fa2']
-            }
+        col_c1, col_c2, col_c3, col_c4, col_c5 = st.columns([1, 1, 1, 1, 2.5])
 
-            fig_arch = go.Figure()
-            for i, (layer, size, color) in enumerate(zip(arch_data['Layer'], arch_data['Size'], arch_data['Color'])):
-                fig_arch.add_trace(go.Bar(
-                    x=[1],
-                    y=[len(arch_data['Layer']) - i],
-                    orientation='h',
-                    marker=dict(color=color, line=dict(color='white', width=3)),
-                    width=[0.8],
-                    text=f'{layer}: {size}',
-                    textposition='inside',
-                    textfont=dict(color='white' if i >= 3 else 'black', size=14),
-                    showlegend=False,
-                    hoverinfo='text',
-                    hovertext=f'{layer}\n{size}'
-                ))
-
-            fig_arch.update_layout(
-                height=350,
-                xaxis=dict(range=[0, 2], visible=False),
-                yaxis=dict(visible=False),
-                margin=dict(l=10, r=10, t=10, b=10),
-                barmode='stack',
-                title='Neural Language Model Architecture'
+        with col_c1:
+            if st.button('⏮ Back', disabled=st.session_state.nn_step == 0):
+                st.session_state.nn_step -= 1
+                st.session_state.nn_playing = False
+                st.rerun()
+        with col_c2:
+            if st.button('⏸ Pause' if st.session_state.nn_playing else '▶ Play'):
+                st.session_state.nn_playing = not st.session_state.nn_playing
+                st.rerun()
+        with col_c3:
+            if st.button('⏭ Forward', disabled=st.session_state.nn_step == 5):
+                st.session_state.nn_step += 1
+                st.session_state.nn_playing = False
+                st.rerun()
+        with col_c4:
+            if st.button('⟲ Reset'):
+                st.session_state.nn_step = 0
+                st.session_state.nn_playing = False
+                st.rerun()
+        with col_c5:
+            step_labels = ['🏗 Architecture', '1️⃣ Input', '2️⃣ Embed', '3️⃣ Concat', '4️⃣ Hidden', '5️⃣ Output']
+            st.markdown(
+                f'<div style="background:#e8eaf6;padding:6px 14px;border-radius:20px;'
+                f'text-align:center;font-weight:bold;color:#4a148c;">'
+                f'{step_labels[st.session_state.nn_step]} ({"auto" if st.session_state.nn_playing else "manual"})</div>',
+                unsafe_allow_html=True
             )
-            st.plotly_chart(fig_arch, use_container_width=True)
 
-            # Interactive demo
-            st.markdown('**Try it yourself — Predict the next word!**')
-            demo_input = st.text_input(
-                'Type 5 Khmer words:',
-                value='ប្រាសាទ អង្គរវត្ត ជា ប្រាសាទ ដ៏',
-                key='learn_demo'
-            )
+        # ── Auto-play timer ──
+        if st.session_state.nn_playing:
+            if st.session_state.nn_step < 5:
+                import time
+                time.sleep(2.0)
+                st.session_state.nn_step += 1
+                st.rerun()
+            else:
+                st.session_state.nn_playing = False
 
-            if demo_input:
-                demo_words = demo_input.strip().split()
-                if len(demo_words) >= config['N_PREV']:
-                    # Fixed LM
-                    pred_f, cands_f = predict_next_word(
-                        lm_fixed, word2idx, idx2word,
-                        demo_words, config['N_PREV'], top_k=5
+        # ── Draw network with active layer ──
+        nn_step = st.session_state.nn_step
+        active_ly = nn_step - 1 if nn_step > 0 else None
+
+        nn_fig = draw_neural_network(
+            active_layer=active_ly,
+            vocab_size=vocab_size,
+            hidden_size=config['HIDDEN_SIZE'],
+            n_prev=config['N_PREV'],
+            emb_dim=config['EMBEDDING_DIM']
+        )
+        st.plotly_chart(nn_fig, use_container_width=True)
+
+        # ── Step explanation panel ──
+        step_info_col1, step_info_col2 = st.columns([3, 2])
+
+        with step_info_col1:
+            if nn_step == 0:
+                st.info('''
+                **🏗 Architecture Overview**
+
+                This is the full neural language model. It has **5 layers** that transform 5 input words
+                into a probability distribution over all vocabulary words.
+
+                Use the **Play** button above to watch data flow through each layer, or click **Forward**
+                to step through manually.
+                ''')
+            elif nn_step == 1:
+                st.info('''
+                **1️⃣ Input Layer — Words → Indices**
+
+                Each Khmer word is converted to a unique **integer index** by looking it up in the vocabulary.
+                The model takes the last **5 words** as input context.
+                ''')
+                if valid_demo:
+                    html_words = ''
+                    for i, w in enumerate(demo_words[-5:]):
+                        idx = word2idx[w]
+                        html_words += (
+                            f'<div style="display:inline-block;background:#e3f2fd;padding:8px 14px;'
+                            f'margin:4px;border-radius:10px;text-align:center;border:2px solid #64b5f6;">'
+                            f'<div style="font-size:1.2rem;font-weight:bold;">{w}</div>'
+                            f'<div style="font-size:0.7rem;color:#666;">idx={idx}</div></div>'
+                        )
+                    st.markdown(f'<div style="text-align:center;">{html_words}</div>', unsafe_allow_html=True)
+            elif nn_step == 2:
+                st.info('''
+                **2️⃣ Embedding Layer — Words → Vectors**
+
+                Each word index is used to **look up a 50-dimensional vector** from the embedding matrix.
+                These vectors capture semantic meaning — similar words have similar vectors.
+                ''')
+                if nn_emb_sample is not None:
+                    emb_df = pd.DataFrame(
+                        nn_emb_sample,
+                        index=[f'"{w}"' for w in demo_words[-5:]],
+                        columns=[f'dim{i+1}' for i in range(5)]
                     )
-                    # Scratch LM
-                    pred_s, cands_s = predict_next_word(
-                        lm_scratch, word2idx, idx2word,
-                        demo_words, config['N_PREV'], top_k=5
+                    emb_df = emb_df.round(3)
+                    st.dataframe(emb_df, use_container_width=True)
+                    st.caption('First 5 of 50 dimensions shown — each word becomes a dense vector')
+            elif nn_step == 3:
+                st.info('''
+                **3️⃣ Concatenation — 5×50 → 250D**
+
+                The 5 embedding vectors (each 50D) are **flattened and concatenated** end-to-end
+                into a single 250-dimensional vector. This combines information from all 5 words.
+                ''')
+                st.markdown(
+                    f'<div style="background:#fff3e0;padding:15px;border-radius:10px;text-align:center;">'
+                    f'<b style="font-size:1.2rem;">5 × 50 = 250 dimensions</b><br>'
+                    f'<span style="color:#666;">[word1_vec (50)] + [word2_vec (50)] + ... + [word5_vec (50)]</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            elif nn_step == 4:
+                st.info('''
+                **4️⃣ Hidden Layer — 250 → 512 → Sigmoid**
+
+                The 250D vector passes through a **linear transformation** (matrix multiply + bias)
+                to 512 neurons, then a **sigmoid** activation squashes values between 0 and 1.
+                ''')
+                if nn_hidden_sample is not None:
+                    st.markdown(
+                        f'<div style="background:#f3e5f5;padding:12px;border-radius:10px;">'
+                        f'<b>Sample hidden activations (first 8 of 512):</b><br>'
+                        f'{"  ".join([f"{v:.3f}" for v in nn_hidden_sample])} ...'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+            elif nn_step == 5:
+                st.info('''
+                **5️⃣ Output Layer — 512 → Softmax → Probabilities**
+
+                The hidden layer feeds into a **linear layer** mapping 512 → vocab_size, then
+                **softmax** converts the scores into probabilities that sum to 1. The word with
+                the highest probability is the model's prediction!
+                ''')
+                if nn_pred_word and nn_cands:
+                    # Show predicted word
+                    st.markdown(
+                        f'<div style="text-align:center;background:#fce4ec;padding:15px;border-radius:12px;">'
+                        f'<div style="font-size:0.9rem;color:#666;">Predicted next word →</div>'
+                        f'<div style="font-size:2.5rem;font-weight:bold;color:#c62828;">{nn_pred_word}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
                     )
 
-                    if pred_f is not None:
-                        c_f, c_s = st.columns(2)
-                        with c_f:
-                            st.markdown('**🧊 Fixed LM**')
-                            st.metric('Predicted', pred_f)
-                            df_f = pd.DataFrame(cands_f, columns=['Word', 'Prob'])
-                            df_f['Prob'] = (df_f['Prob'] * 100).round(1).apply(lambda x: f'{x:.1f}%')
-                            st.dataframe(df_f, hide_index=True, use_container_width=True)
+        with step_info_col2:
+            # Side panel showing real data
+            if nn_step == 0:
+                st.markdown('**📊 Network Stats**')
+                st.markdown(f'''
+                - **Input:** {config['N_PREV']} words
+                - **Embedding dim:** {config['EMBEDDING_DIM']}D
+                - **Concat size:** {config['N_PREV'] * config['EMBEDDING_DIM']}D
+                - **Hidden neurons:** {config['HIDDEN_SIZE']}
+                - **Output vocabulary:** {vocab_size} words
+                - **Total params:** ~200K
+                ''')
+            elif nn_step == 1:
+                st.markdown('**🔤 Current Demo Words**')
+                st.markdown(
+                    f'<div style="background:#e8eaf6;padding:8px;border-radius:8px;font-size:1rem;">'
+                    f'{" ".join(demo_words[-5:])}</div>',
+                    unsafe_allow_html=True
+                )
+                st.caption('These 5 words are the input to the network')
+            elif nn_step == 2:
+                st.markdown('**🧊 Embedding Matrix Shape**')
+                st.code(f'{vocab_size} × {config["EMBEDDING_DIM"]}')
+                st.markdown('Each row is a 50D vector for one word')
+            elif nn_step == 3:
+                st.markdown('**📐 Concatenation Details**')
+                st.code(f'Input shape: (5, {config["EMBEDDING_DIM"]})\nFlattened: (250,)') 
+                st.markdown('This becomes the input to the hidden layer')
+            elif nn_step == 4:
+                st.markdown('**🧮 Hidden Layer Weights**')
+                st.code(f'W: ({config["N_PREV"]*config["EMBEDDING_DIM"]}, {config["HIDDEN_SIZE"]})\nb: ({config["HIDDEN_SIZE"]},)')
+                st.caption('Linear transformation learned during training')
+            elif nn_step == 5:
+                if nn_cands:
+                    st.markdown('**📊 Top Predictions**')
+                    df_pred = pd.DataFrame(nn_cands, columns=['Word', 'Probability'])
+                    df_pred['Prob %'] = (df_pred['Probability'] * 100).round(1).apply(lambda x: f'{x:.1f}%')
+                    st.dataframe(df_pred[['Word', 'Prob %']], hide_index=True, use_container_width=True)
+                    
+                    # Probability bar chart
+                    fig_prob = go.Figure()
+                    fig_prob.add_trace(go.Bar(
+                        x=[p*100 for _, p in nn_cands],
+                        y=[w for w, _ in nn_cands],
+                        orientation='h',
+                        marker=dict(color=['#c62828' if i == 0 else '#ef9a9a' for i in range(len(nn_cands))]),
+                        text=[f'{p*100:.1f}%' for _, p in nn_cands],
+                        textposition='outside'
+                    ))
+                    fig_prob.update_layout(
+                        height=250, margin=dict(l=0, r=0, t=10, b=0),
+                        xaxis=dict(range=[0, 105]),
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig_prob, use_container_width=True)
 
-                        with c_s:
-                            st.markdown('**🔥 Scratch LM**')
-                            st.metric('Predicted', pred_s)
-                            df_s = pd.DataFrame(cands_s, columns=['Word', 'Prob'])
-                            df_s['Prob'] = (df_s['Prob'] * 100).round(1).apply(lambda x: f'{x:.1f}%')
-                            st.dataframe(df_s, hide_index=True, use_container_width=True)
-                    else:
-                        st.warning('Some words not in vocabulary. Try simpler words.')
-                else:
-                    st.warning(f'Enter at least {config["N_PREV"]} words.')
-
-        with col2:
-            st.markdown('**How Prediction Works**')
-            st.markdown('''
-            1. Each word → 50D embedding vector
-            2. Concatenate 5 word vectors → 250D input
-            3. Hidden layer (512 units) with **sigmoid** activation
-            4. Output layer → probability for each word in vocabulary
-            5. Pick the word with **highest probability**
-            ''')
-
-            # Comparison
-            st.markdown('**Part III vs Part IV**')
-            fixed_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_fixed.pt', map_location='cpu')
-            scratch_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_scratch.pt', map_location='cpu')
-            fp = fixed_checkpoint.get('final_perplexity', 0)
-            sp = scratch_checkpoint.get('final_perplexity', 0)
-
-            st.metric('Fixed LM Perplexity', f'{fp:.2f}' if fp else 'N/A',
-                      help='Lower is better')
-            st.metric('Scratch LM Perplexity', f'{sp:.2f}' if sp else 'N/A',
-                      delta=f'{- (fp - sp):.2f} ({- (fp - sp) / fp * 100:.0f}% better)' if fp and sp else '')
-
-            st.info(
-                '💡 **Why Scratch performs better?**  \n'
-                'The embeddings learned from scratch are optimized specifically '
-                'for the next-word prediction task, while Skip-gram embeddings '
-                'are optimized for general word similarity.'
+        # ── Color Legend ──
+        if nn_step == 0:
+            st.markdown(
+                '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:5px 0;">'
+                '<span style="background:#64b5f6;padding:4px 10px;border-radius:12px;color:white;font-size:0.8rem;">Input: 5 words</span>'
+                '<span style="background:#81c784;padding:4px 10px;border-radius:12px;color:white;font-size:0.8rem;">Embed: 50D/word</span>'
+                '<span style="background:#ffb74d;padding:4px 10px;border-radius:12px;color:white;font-size:0.8rem;">Concat: 250D</span>'
+                '<span style="background:#ba68c8;padding:4px 10px;border-radius:12px;color:white;font-size:0.8rem;">Hidden: 512 sigmoid</span>'
+                '<span style="background:#ef5350;padding:4px 10px;border-radius:12px;color:white;font-size:0.8rem;">Output: '+str(vocab_size)+' softmax</span>'
+                '</div>',
+                unsafe_allow_html=True
             )
+
+        # ── Interactive prediction demo (always visible below animation) ──
+        st.markdown('---')
+        st.markdown('### 🧪 Try Different Words')
+        st.markdown('Type any 5 Khmer words to see how the network processes them.')
+
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            if nn_pred_word and valid_demo:
+                st.metric('🧊 Fixed LM Predicts', nn_pred_word)
+        with col_d2:
+            if valid_demo:
+                # Scratch prediction
+                ctx = demo_words[-config['N_PREV']:]
+                s_pred, s_cands = predict_next_word(
+                    lm_scratch, word2idx, idx2word,
+                    ctx, config['N_PREV'], top_k=5
+                )
+                if s_pred:
+                    st.metric('🔥 Scratch LM Predicts', s_pred)
+            elif demo_words_str.strip():
+                st.warning('Some words not in vocabulary. Try: មាន និង ជា ប្រាសាទ វត្ត')
+
+        if nn_cands and valid_demo:
+            st.markdown('**🧊 Fixed LM Top Candidates**')
+            df_f = pd.DataFrame(nn_cands, columns=['Word', 'Prob'])
+            df_f['Prob'] = (df_f['Prob'] * 100).round(1).apply(lambda x: f'{x:.1f}%')
+            st.dataframe(df_f, hide_index=True, use_container_width=True)
+
+        # ── Perplexity comparison ──
+        st.markdown('---')
+        st.markdown('**📊 Perplexity Comparison**')
+        fixed_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_fixed.pt', map_location='cpu')
+        scratch_checkpoint = torch.load(f'{MODELS_DIR}/lm_model_scratch.pt', map_location='cpu')
+        fp = fixed_checkpoint.get('final_perplexity', 0)
+        sp = scratch_checkpoint.get('final_perplexity', 0)
+
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.metric('🧊 Fixed LM', f'{fp:.2f}' if fp else 'N/A', help='Lower is better')
+        with col_m2:
+            st.metric('🔥 Scratch LM', f'{sp:.2f}' if sp else 'N/A',
+                     delta=f'{- (fp - sp):.2f} ({- (fp - sp) / fp * 100:.0f}% better)' if fp and sp else '')
+
+        st.info(
+            '💡 **Why Scratch performs better?**  \n'
+            'The embeddings learned from scratch are optimized specifically '
+            'for the next-word prediction task, while Skip-gram embeddings '
+            'are optimized for general word similarity.'
+        )
 
 # ─── Footer ──────────────────────────────────
 
