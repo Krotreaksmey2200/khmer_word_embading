@@ -32,7 +32,7 @@ This project implements a complete word embeddings pipeline for Khmer text as pa
 - **khmer-nltk** — Khmer word tokenization
 - **scikit-learn** — PCA dimensionality reduction
 - **NumPy / Pandas** — Data processing
-- **Matplotlib** — Visualization
+- **Matplotlib / Plotly** — Static & interactive visualizations
 - **Streamlit** — Interactive web application (`app.py`)
 
 ## Dataset
@@ -56,9 +56,45 @@ The corpus is sourced from three Khmer Wikipedia articles about Cambodian temple
 ├── pca_skipgram.png      # PCA visualization of Skip-gram embeddings
 ├── pca_comparison.png    # PCA comparison (Skip-gram vs Scratch)
 ├── hyperparameter_tuning.png     # Hyperparameter tuning results
+├── streamlit_app.png     # Streamlit app screenshot
 ├── mini_project_3_report.pdf     # Final report (PDF)
 └── mini_project_3.pdf    # Project brief
 ```
+
+## 🔬 Interactive Web App
+
+The project includes a full-featured **Streamlit** web application for exploring word embeddings interactively.
+
+![Streamlit App Screenshot](streamlit_app.png)
+
+*The Khmer Word Embeddings Explorer — interactive word similarity, next-word prediction, PCA visualization, and more.*
+
+### Launch the App
+
+```bash
+# Make sure models are trained first (run the notebook)
+streamlit run app.py
+```
+
+The app will open at `http://localhost:8501` with **7 interactive tabs**:
+
+| Tab | Description |
+|-----|-------------|
+| **🔍 Word Similarity** | Search for a Khmer word and find its nearest neighbors using cosine similarity. Compares Skip-gram and LM Scratch embeddings side-by-side with interactive bar charts. |
+| **🔮 Next-Word Prediction** | Enter a sequence of Khmer words. Both LM models (Fixed & Scratch) predict the next word and show candidate probabilities. |
+| **📊 PCA Visualization** | Interactive 2D scatter plot of word embeddings. Choose Skip-gram, Scratch, or both side-by-side. Hover to see word labels. |
+| **⚡ Model Comparison** | Side-by-side comparison of Part III (Fixed) vs Part IV (Scratch) — perplexity, PCA variance, cross-model agreement. |
+| **📈 Hyperparameter Tuning** | Explore grid search results across embedding dims, window sizes, and negative sample counts. 3D interactive scatter plot. |
+| **💬 Chat Interface** | Type any Khmer text for word-by-word analysis: vocabulary status, frequency rank, nearest neighbors, and next-word predictions from both models. |
+| **🎬 Learn the Process** | Step-by-step educational guide with animated forward pass through the neural network. Covers all 7 stages from data loading to prediction. |
+
+### App Features
+
+- **Interactive visualizations** using Plotly (bar charts, scatter plots, 3D plots, histograms)
+- **Responsive UI** with gradient headers, card-based layouts, and color-coded word chips
+- **Graceful error handling** — clear messages if model files are missing
+- **Auto-play animation** for the neural network forward pass (Tab 7)
+- **Real-time chat analysis** with vocabulary coverage stats
 
 ## Installation
 
@@ -79,7 +115,7 @@ python -c "from khmernltk import word_tokenize; print('khmer-nltk ready')"
 - `khmer-nltk` — Khmer tokenization
 - `scikit-learn` — PCA
 - `matplotlib` — Visualization
-- `streamlit` — Web app (optional)
+- `streamlit` — Web app
 
 ## Usage
 
@@ -97,10 +133,13 @@ The notebook is self-contained and organized into 4 parts:
 4. **Part IV — Neural LM (Scratch):** Same architecture as Part III but learns embeddings from random initialization. Compares results.
 5. **Hyperparameter Tuning:** Tests different embedding dimensions, window sizes, and negative sample counts.
 
-### Launch the Web App
+### Prerequisite: Train Models First
+
+Before launching the Streamlit app, ensure the `saved_models/` directory exists with all trained model files. Run the notebook first:
 
 ```bash
-streamlit run app.py
+jupyter notebook main.ipynb
+# Execute all cells to train models and save them to saved_models/
 ```
 
 ## Results
