@@ -15,7 +15,7 @@ __pycache__/
 /streamlit/
 
 # Large generated files
-saved_models/
+# saved_models/  # Commented out for Streamlit Cloud deployment
 *.pkl
 *.pt
 
